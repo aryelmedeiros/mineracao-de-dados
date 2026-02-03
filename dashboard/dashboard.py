@@ -6,6 +6,18 @@ import seaborn as sns
 import matplotlib.pyplot as plt 
 import time
 
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report
+
+from sklearn.model_selection import train_test_split
+
+scaler = StandardScaler()
+
+
 NUM_COLS = 3
 
 st.set_page_config(
@@ -20,9 +32,11 @@ if "uploaded_file" not in st.session_state:
 if "df" not in st.session_state:
     st.session_state.df = None
 
-
+# MENU LATERAL
+with st.sidebar:
+    st.write("# MENU")
 menu =  st.sidebar.radio(
-     "Menu",
+    "Selecione uma das Página:",
      ["Upload", "Visualização", "Tratamento", "Treino e Teste"]
 )
     
@@ -82,25 +96,26 @@ if menu == "Upload":
 
 
 
+# -------- PAGINA DE VISUALIZAÇÂO GRAFICA 
 
 elif menu == "Visualização":
     st.write("## Visualização dos Dados")
     colunas = st.columns(3)
-    if "df" in st.session_state:
+    
+    if st.session_state.df is not None:
         df = st.session_state.df
 
         education_map = {1: 'Below College', 2: 'College', 3: 'Bachelor', 4: 'Master', 5: 'Doctor'}
         satisfaction_map = {1: 'Low', 2: 'Medium', 3: 'High', 4: 'Very High'}
         rating_map = {1: 'Low', 2: 'Good', 3: 'Excellent', 4: 'Outstanding'}
 
-        # Criando colunas legíveis para os gráficos (sem substituir os dados originais se não quiser)
+        # Criando colunas legíveis para os gráficos
         df['Education_Label'] = df['Education'].map(education_map)
         df['JobSat_Label'] = df['JobSatisfaction'].map(satisfaction_map)
-            # Prepara os dados (pode usar o crosstab da opção 2)
 
         n_df = pd.crosstab(df['JobRole'], df['Attrition']).reset_index()
 
-        # Derrete o dataframe para formato longo (necessário para Plotly/Altair)
+        # Derrete o dataframe para formato longo
         n_df_long = n_df.melt(id_vars='JobRole', var_name='Attrition', value_name='Quantidade')
         with colunas[0]:
             # Cria o gráfico
@@ -109,9 +124,9 @@ elif menu == "Visualização":
                 x='Quantidade', 
                 y='JobRole', 
                 color='Attrition', 
-                orientation='h', # Barras horizontais
+                orientation='h',
                 title='JobRole e Attrition',
-                barmode='group' # ou 'stack' se preferir empilhado
+                barmode='group'
             )   
         
             st.plotly_chart(fig)
@@ -121,7 +136,7 @@ elif menu == "Visualização":
             # Agrupando os dados
             avg_income = df.groupby(['Education_Label', 'Attrition'])['MonthlyIncome'].mean().reset_index()
 
-            # Ordenar a categoria Education para não ficar alfabético (opcional, mas recomendado)
+            # Ordenar a categoria Education para não ficar alfabético
             ordem_educacao = ['Below College', 'College', 'Bachelor', 'Master', 'Doctor']
 
             fig_bar = px.bar(
@@ -130,7 +145,7 @@ elif menu == "Visualização":
                 y='MonthlyIncome', 
                 color='Attrition', 
                 barmode='group',
-                category_orders={'Education_Label': ordem_educacao}, # Força a ordem lógica
+                category_orders={'Education_Label': ordem_educacao}, 
                 title="Renda Mensal Média por Educação e Attrition"
             )
             st.plotly_chart(fig_bar)
@@ -212,9 +227,10 @@ elif menu == "Visualização":
          st.warning("Por Favor, faça o upload do Arquivo")
           
     
-
+# ----- TELA DE TRATAMENTO DOS DADOS 
 elif menu == "Tratamento":
-    if "df" in st.session_state:
+    st.write("## Tratamento Automatizado dos Dados")
+    if st.session_state.df is not None:
         df = st. session_state.df 
 
         if st.button("Inciar Tratamento"):
@@ -250,19 +266,126 @@ elif menu == "Tratamento":
                 st.write("Valores nulos foram removidos do Dataset")
             else:
                 st.success("✅ O dataset está limpo! Nenhum valor nulo encontrado.")
-                if st.button("Remover Arquivo"):
-                    st.session_state.df = None
-                    st.session_state.uploaded_filae = None
 
             #---------ONEHOT ENCONDING 
+
+            with st.spinner("Convertendo Variaveis Categoricas..."):
+                time.sleep(2)
+
+            cat_cols = df.select_dtypes(include="object").columns
+
+            df_encoded = pd.get_dummies(df, columns=cat_cols)
+            st.write("## Dataset Convertido")
+            st.dataframe(df_encoded)
+
+        # ------------ STANDART SCALE
+
+            with st.spinner("Normalizando Variaveis Númericas ..."):
+                    time.sleep(2)
+
+            numeric_cols = df.select_dtypes(include="int64").columns
+
+            df_encoded[numeric_cols] = scaler.fit_transform(
+                df_encoded[numeric_cols]
+            )
+
+            st.write("## Dataset Normalizado e Convertido")
+            st.dataframe(df_encoded)
+
+
+
     else:
         st.info("Faça o upload do arquivo")
 
+
+# ----- TELA DE TREINO E TESTE DO MODELO
 elif menu == "Treino e Teste":
-    st.write("Settings page")
-    #st.select_slider()
+    st.write("## Treino e Teste do Modelo Decision Tree")
 
-check = False
+    if st.session_state.df is not None:
 
-colunas = st.columns(NUM_COLS)
-# 2. Verifica se um arquivo foi carregado antes de tentar ler
+        if st.button("Iniciar Treino e Teste do Modelo"):
+
+            with st.spinner("Iniciando Treino e Teste"):
+                time.sleep(2)
+            
+            df = st.session_state.df
+
+            # 1. Separar X e y
+            X = df.drop(columns=['Attrition','EmployeeNumber'])
+            y = df['Attrition']
+
+            numeric_features = X.select_dtypes(
+                include=["int64", "float64"]
+            ).columns.tolist()
+
+            categorical_features = X.select_dtypes(
+                include="object"
+            ).columns.tolist()
+
+            numeric_transformer = Pipeline(steps=[
+                ('scaler', StandardScaler())
+            ])
+
+            categorical_transformer = Pipeline(steps=[
+                ('onehot', OneHotEncoder(handle_unknown='ignore'))
+            ])
+
+            preprocessor = ColumnTransformer(
+                transformers=[
+                    ('num', numeric_transformer, numeric_features),
+                    ('cat', categorical_transformer, categorical_features)
+                ]
+            )
+
+            pipeline = Pipeline(steps=[
+                ('preprocessor', preprocessor),
+                ('classifier', DecisionTreeClassifier(random_state=42))
+            ])
+
+            with st.spinner("Separando Conjuntos Treino (70%) e Teste (30%)"):
+                time.sleep(2)
+
+            # 2. Separar treino e teste #HoldOUT
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42, stratify=y
+            )
+            with st.spinner("Treinando o Modelo"):
+                time.sleep(2)
+                    # 3. Criar pipeline
+            pipeline.fit(X_train, y_train)
+
+            # 4. Avaliar
+            with st.spinner("Testando o modelo"):
+                time.sleep(2)
+            y_pred = pipeline.predict(X_test)
+            print(classification_report(y_test, y_pred))
+
+                        
+            report = classification_report(
+                y_test,
+                y_pred,
+                output_dict=True
+            )
+
+            df_report = pd.DataFrame(report).transpose()
+
+            accuracy = df_report.loc["accuracy", "precision"]
+            f1_macro = df_report.loc["macro avg", "f1-score"]
+            f1_weighted = df_report.loc["weighted avg", "f1-score"]
+
+            st.subheader("📈 Performance do Modelo")
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Accuracy", f"{accuracy:.3f}")
+            col2.metric("F1 (Macro)", f"{f1_macro:.3f}")
+            col3.metric("F1 (Weighted)", f"{f1_weighted:.3f}")
+
+            st.divider()
+            st.subheader("📋 Detailed Classification Report")
+            st.dataframe(df_report.round(3))
+
+    else:
+
+        st.info("Faça o upload de um Arquivo")
+
